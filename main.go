@@ -288,7 +288,7 @@ func main() {
     inPath  := "./resources/skull2.png"
     outPath := "./out.png"
     maskPath := "./mask.png"
-
+    threshold := 110
 
     flag.BoolVar(&CRUSH, "crush", false, "Crush the output (bug turned feature)")
     flag.BoolVar(&MASK_DEBUG, "mask_debug", false, "White-out the mask for debugging")
@@ -300,6 +300,7 @@ func main() {
     flag.StringVar(&inPath, "in", "", "Path to file to sort - REQUIRED")
     flag.StringVar(&outPath, "out", "./sorted.png", "Path to output file")
     flag.StringVar(&maskPath, "mask", "", "Path to mask output file - does not write if unspecified")
+    flag.IntVar(&threshold, "threshold", 110, "Red channel threshold for the contrast mask")
 
     flag.Parse()
 
@@ -311,7 +312,7 @@ func main() {
 
     imData := load_image(inPath)
     imData_nrgb := data_to_nrgba(imData)
-    mask := create_contrast_mask(imData_nrgb, 110)
+    mask := create_contrast_mask(imData_nrgb, uint8(threshold))
     sorted := create_sorted_from_mask(imData_nrgb, mask)
 
     if maskPath != "" {
