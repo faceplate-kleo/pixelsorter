@@ -9,6 +9,7 @@ import (
     "os"
     "math/rand"
     "flag"
+    "strings"
 )
 
 var DEBUG bool = false 
@@ -18,6 +19,7 @@ var SOURCE_DEBUG bool = false
 var DESCEND bool = false 
 var CRUSH bool = false 
 var CLEAN bool = false 
+var INVERT bool = false
 
 var MEAN_COMPARE bool = true
 var GRAY_RED_COMPARE bool = false 
@@ -69,8 +71,15 @@ func create_contrast_mask(imData image.Image, threshold uint8) *image.NRGBA {
             comp_u32, _, _, _ := currentColor.RGBA()
             comparator := uint8(comp_u32)
             outColor := color.White 
+            if INVERT {
+                outColor = color.Black
+            }
             if comparator < threshold {
-                outColor = color.Black 
+                if !INVERT {
+                    outColor = color.Black 
+                } else {
+                    outColor = color.White 
+                }
             }
 
             if MASK_DEBUG {
@@ -283,37 +292,176 @@ func data_to_nrgba(imData image.Image) *image.NRGBA{
     return out
 }
 
+func reverse_rows_nrgba(imData *image.NRGBA) {
+    for i := 0; i < imData.Rect.Dy(); i++ {
+        a := 0 
+        b := imData.Rect.Dx()
+
+        for a < b {
+            tmp := imData.At(a, i)
+            imData.Set(a, i, imData.At(b, i))
+            imData.Set(b, i, tmp)
+            a++
+            b--
+        }
+    }
+}
+func reverse_cols_nrgba(imData *image.NRGBA) {
+    for i := 0; i < imData.Rect.Dx(); i++ {
+        a := 0 
+        b := imData.Rect.Dy()
+
+        for a < b {
+            tmp := imData.At(a, i)
+            imData.Set(i, a, imData.At(b, i))
+            imData.Set(i, b, tmp)
+            a++
+            b--
+        }
+    }
+}
+
+
+
+func rotate_nrgba(imData *image.NRGBA, rotations int) *image.NRGBA {
+
+    
+
+    init_x := imData.Bounds().Dx()
+    init_y := imData.Bounds().Dy()
+
+    desired_x := init_x
+    desired_y := init_y
+
+    if rotations % 2 != 0 {
+        desired_x = init_y 
+        desired_y = init_x
+    }
+
+    output := image.NewNRGBA(image.Rect(0, 0, desired_x, desired_y))
+
+    if rotations == 2 {
+
+        for i := 0; i < desired_y; i++ {
+            for j := 0; j < desired_x; j++ {
+                output.Set(j, i, imData.At(j,i))
+            }
+        }
+        reverse_rows_nrgba(output)
+        reverse_cols_nrgba(output)
+        return output
+
+    }
+
+
+    if rotations == 3 {
+        reverse_rows_nrgba(imData)
+    }
+
+
+    if rotations % 2 != 0 {
+        for i := 0; i < desired_y; i++ {
+            for j := 0; j < desired_x; j++ {
+                output.Set(j, i, imData.At(i,j))
+            }
+        }
+    }
+
+    if rotations == 1 {
+        reverse_rows_nrgba(output)
+    }
+
+
+
+    return output 
+}
+
+func flip_nrgba(imData *image.NRGBA, horizontal bool) *image.NRGBA {
+
+    output := image.NewNRGBA(imData.Bounds())
+    bound := imData.Bounds().Dy()
+    altbound := imData.Bounds().Dx()
+
+    if !horizontal {
+        bound = imData.Bounds().Dx()
+        altbound = imData.Bounds().Dy()
+    }
+
+    for i := 0; i < bound; i++ {
+        for j := 0; j < altbound; j++ {
+            output.Set(j, i, imData.At(j, i))        
+        }
+    }
+
+    if horizontal {
+        reverse_rows_nrgba(output)
+    }
+
+    return output 
+
+}
+
+func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, direction string) (*image.NRGBA, *image.NRGBA) {
+    direction = strings.ToLower(direction)
+    if direction == "up" {
+        imData_nrgb = rotate_nrgba(imData_nrgb, 1)
+    } else if direction == "down" {
+        imData_nrgb = rotate_nrgba(imData_nrgb, 3)
+    } else if direction == "left" {
+        imData_nrgb = flip_nrgba(imData_nrgb, true)
+        //imData_nrgb = rotate_nrgba(imData_nrgb, 2)
+    }
+    mask := create_contrast_mask(imData_nrgb, uint8(threshold))
+    sorted := create_sorted_from_mask(imData_nrgb, mask)
+
+
+    if direction == "up" {
+        sorted = rotate_nrgba(sorted, 3)
+    } else if direction == "down" {
+        sorted = rotate_nrgba(sorted, 1)
+    } else if direction == "left" {
+        sorted = flip_nrgba(sorted , true)
+        //sorted = rotate_nrgba(sorted, 2)
+    }
+
+    return sorted, mask 
+
+}
 
 func main() {
     inPath  := "./resources/skull2.png"
     outPath := "./out.png"
     maskPath := "./mask.png"
     threshold := 110
+    direction := "right"
 
     flag.BoolVar(&CRUSH, "crush", false, "Crush the output (bug turned feature)")
     flag.BoolVar(&MASK_DEBUG, "mask_debug", false, "White-out the mask for debugging")
     flag.BoolVar(&SOURCE_DEBUG, "source_debug", false, "Replace the input data with random color noise for debugging")
     flag.BoolVar(&DESCEND, "descend", false, "Sort pixels in descending order")
     flag.BoolVar(&CLEAN, "clean", false, "Limit sorting to only within mask, with no bleeding")
+    flag.BoolVar(&INVERT, "invert", false, "Invert the contrast mask")
     flag.BoolVar(&MEAN_COMPARE, "mean_compare", true, "Base pixel comparisons on R+G+B/3")
     flag.BoolVar(&GRAY_RED_COMPARE, "red_compare", false, "Base pixel comparions on just R - defaults false, overrides mean_compare")
     flag.StringVar(&inPath, "in", "", "Path to file to sort - REQUIRED")
     flag.StringVar(&outPath, "out", "./sorted.png", "Path to output file")
     flag.StringVar(&maskPath, "mask", "", "Path to mask output file - does not write if unspecified")
     flag.IntVar(&threshold, "threshold", 110, "Red channel threshold for the contrast mask")
+    flag.StringVar(&direction, "direction", "right", "Direction of sort smear (up, down, left, right)")
 
     flag.Parse()
 
     if inPath == "" {
         fmt.Println("FATAL: no input file specified! ( -in )")
-        return 
+        flag.Usage()
+        return
     }
 
 
     imData := load_image(inPath)
     imData_nrgb := data_to_nrgba(imData)
-    mask := create_contrast_mask(imData_nrgb, uint8(threshold))
-    sorted := create_sorted_from_mask(imData_nrgb, mask)
+
+    sorted, mask := sort_nrgba_image(imData_nrgb, threshold, direction)
 
     if maskPath != "" {
         write_file(mask, maskPath)
