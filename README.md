@@ -15,7 +15,7 @@ go build
 from inside.
 
 ## Usage
- By default, pixelsorter requires the `-in` flag to specify the input file. THus, the minimum required invocation is as follows:
+ By default, pixelsorter requires the `-in` flag to specify the input file. Thus, the minimum required invocation is as follows:
  ```
  ./pixelsorter -in /path/to/input/file.png
  ```
