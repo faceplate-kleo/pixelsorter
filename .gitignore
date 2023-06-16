@@ -1,5 +1,6 @@
 .DS_Store
 *.png
+!assets/example1.png
 resources
 run.sh
 pixelsorter
