@@ -8,20 +8,21 @@ import (
     "log"
     "os"
     "math/rand"
+    "flag"
 )
 
 var DEBUG bool = false 
 var MASK_DEBUG bool = false 
 var SOURCE_DEBUG bool = false
 
-var ASCEND bool = false 
+var DESCEND bool = false 
 var CRUSH bool = false 
 var CLEAN bool = false 
 
 var MEAN_COMPARE bool = true
 var GRAY_RED_COMPARE bool = false 
 
-func load_image(path string) *image.RGBA {
+func load_image(path string) *image.NRGBA {
     
     imgFile, err := os.Open(path)
     if err != nil {
@@ -33,7 +34,7 @@ func load_image(path string) *image.RGBA {
     if err != nil {
         fmt.Println(err)
     }
-    return imData.(*image.RGBA)
+    return imData.(*image.NRGBA)
 }
 
 func write_file (imData *image.NRGBA, path string) {
@@ -113,20 +114,20 @@ func mean_compare(colorA, colorB color.Color) bool {
     br, bg, bb, _ := colorB.RGBA()
     mean_a := (ar + ag + ab) / 3 
     mean_b := (br + bg + bb) / 3 
-    if ASCEND {
-        return mean_a < mean_b
-    } else {
+    if DESCEND {
         return mean_a > mean_b
+    } else {
+        return mean_a < mean_b
     }
 }
 
 func red_compare(colorA, colorB color.Color) bool {
     ar, _, _, _ := colorA.RGBA()
     br, _, _, _ := colorB.RGBA()
-    if ASCEND {
-        return ar < br
-    } else {
+    if DESCEND{
         return ar > br
+    } else {
+        return ar < br
     }
 }
 
@@ -181,7 +182,6 @@ func span_mergesort(span []color.Color) []color.Color {
         for i := 0; i < n; i = i + 2*width {
             workArr = merge(span, i, intMin(i+width, n), intMin(i+2*width, n), workArr)
         }
-        //copy(workArr, span)
         copy(span, workArr)
     }
 
@@ -234,17 +234,12 @@ func create_sorted_from_mask(imData image.Image, mask *image.NRGBA) *image.NRGBA
     horizontal_domain := mask.Bounds().Dx()
     vertical_domain := mask.Bounds().Dy()
 
-
-    //starting on the left
-
-
     outer_bound := vertical_domain 
     inner_bound := horizontal_domain
 
     for i := 0; i < outer_bound; i++ {
         for j := 0; j < inner_bound; j++ {
             if color_is_white(mask.At(j,i)){
-                
                 
                 span_x, span_y := get_mask_span(mask, j, i, horizontal_domain, vertical_domain)            
 
@@ -293,11 +288,24 @@ func main() {
     inPath  := "./resources/skull2.png"
     outPath := "./out.png"
     maskPath := "./mask.png"
-    sortedPath := "./sorted.png"
-    args := os.Args 
-    fmt.Println(args)
-    if len(args) > 1 {
-        inPath = args[1]
+
+
+    flag.BoolVar(&CRUSH, "crush", false, "Crush the output (bug turned feature)")
+    flag.BoolVar(&MASK_DEBUG, "mask_debug", false, "White-out the mask for debugging")
+    flag.BoolVar(&SOURCE_DEBUG, "source_debug", false, "Replace the input data with random color noise for debugging")
+    flag.BoolVar(&DESCEND, "descend", false, "Sort pixels in descending order")
+    flag.BoolVar(&CLEAN, "clean", false, "Limit sorting to only within mask, with no bleeding")
+    flag.BoolVar(&MEAN_COMPARE, "mean_compare", true, "Base pixel comparisons on R+G+B/3")
+    flag.BoolVar(&GRAY_RED_COMPARE, "red_compare", false, "Base pixel comparions on just R - defaults false, overrides mean_compare")
+    flag.StringVar(&inPath, "in", "", "Path to file to sort - REQUIRED")
+    flag.StringVar(&outPath, "out", "./sorted.png", "Path to output file")
+    flag.StringVar(&maskPath, "mask", "", "Path to mask output file - does not write if unspecified")
+
+    flag.Parse()
+
+    if inPath == "" {
+        fmt.Println("FATAL: no input file specified! ( -in )")
+        return 
     }
 
 
@@ -306,8 +314,9 @@ func main() {
     mask := create_contrast_mask(imData_nrgb, 110)
     sorted := create_sorted_from_mask(imData_nrgb, mask)
 
-    write_file(imData_nrgb, outPath)    
-    write_file(mask, maskPath)
-    write_file(sorted, sortedPath)
+    if maskPath != "" {
+        write_file(mask, maskPath)
+    }
+    write_file(sorted, outPath)
 
 }
