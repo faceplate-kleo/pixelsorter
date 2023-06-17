@@ -94,6 +94,45 @@ func create_contrast_mask(imData image.Image, threshold uint8) *image.NRGBA {
     return mask
 }
 
+func read_contrast_mask(maskInPath string, bounds image.Rectangle) *image.NRGBA {
+    output := image.NewNRGBA(bounds)
+
+    //open and read file 
+
+    maskFile, err := os.Open(maskInPath)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer maskFile.Close()
+
+    //truncate mask 
+
+
+    maskData, _, err := image.Decode(maskFile)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    bound_x := bounds.Dx() 
+    bound_y := bounds.Dy()
+    mask_x := maskData.Bounds().Dx() 
+    mask_y := maskData.Bounds().Dy()
+
+    final_x := intMin(bound_x, mask_x)
+    final_y := intMin(bound_y, mask_y)
+
+    //copy to output buffer 
+
+    for i := 0; i < final_x; i++ {
+        for j := 0; j < final_y; j++ {
+            output.Set(i, j, maskData.At(i, j))
+        }
+    }
+
+
+    return output
+}
+
 func color_is_white(toComp color.Color) bool {
     cr, cg, cb, ca := toComp.RGBA()
     return (cr+cg+cb+ca) == 65535*4
@@ -401,7 +440,7 @@ func flip_nrgba(imData *image.NRGBA, horizontal bool) *image.NRGBA {
 
 }
 
-func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, direction string) (*image.NRGBA, *image.NRGBA) {
+func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, direction, maskInPath string) (*image.NRGBA, *image.NRGBA) {
     direction = strings.ToLower(direction)
     if direction == "up" {
         imData_nrgb = rotate_nrgba(imData_nrgb, 1)
@@ -411,7 +450,12 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, direction string)
         imData_nrgb = flip_nrgba(imData_nrgb, true)
         //imData_nrgb = rotate_nrgba(imData_nrgb, 2)
     }
-    mask := create_contrast_mask(imData_nrgb, uint8(threshold))
+    var mask *image.NRGBA
+    if maskInPath == "" {
+        mask = create_contrast_mask(imData_nrgb, uint8(threshold))
+    } else {
+        mask = read_contrast_mask(maskInPath, imData_nrgb.Bounds())
+    }
     sorted := create_sorted_from_mask(imData_nrgb, mask)
 
 
@@ -431,7 +475,8 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, direction string)
 func main() {
     inPath  := "./resources/skull2.png"
     outPath := "./out.png"
-    maskPath := "./mask.png"
+    maskInPath := "./mask.png"
+    maskOutPath := "./mask.png"
     threshold := 110
     direction := "right"
 
@@ -445,7 +490,8 @@ func main() {
     flag.BoolVar(&GRAY_RED_COMPARE, "red_compare", false, "Base pixel comparions on just R - defaults false, overrides mean_compare")
     flag.StringVar(&inPath, "in", "", "Path to file to sort - REQUIRED")
     flag.StringVar(&outPath, "out", "./sorted.png", "Path to output file")
-    flag.StringVar(&maskPath, "mask", "", "Path to mask output file - does not write if unspecified")
+    flag.StringVar(&maskOutPath, "mask_out", "", "Path to mask output file - does not write if unspecified")
+    flag.StringVar(&maskInPath, "mask", "", "Path to mask input file - skips mask generation step")
     flag.IntVar(&threshold, "threshold", 110, "Red channel threshold for the contrast mask")
     flag.StringVar(&direction, "direction", "right", "Direction of sort smear (up, down, left, right)")
 
@@ -461,10 +507,10 @@ func main() {
     imData := load_image(inPath)
     imData_nrgb := data_to_nrgba(imData)
 
-    sorted, mask := sort_nrgba_image(imData_nrgb, threshold, direction)
+    sorted, mask := sort_nrgba_image(imData_nrgb, threshold, direction, maskInPath)
 
-    if maskPath != "" {
-        write_file(mask, maskPath)
+    if maskOutPath != "" {
+        write_file(mask, maskOutPath)
     }
     write_file(sorted, outPath)
 
