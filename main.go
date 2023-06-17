@@ -248,7 +248,7 @@ func get_random_color() color.RGBA {
 
 func sort_span(imData image.Image, start_x, start_y, end_x, end_y int, output *image.NRGBA) {
     //create a fast-sortable slice
-    n := end_x - start_x + 1
+    n := end_x - start_x + 1 
     toSort := make([]color.Color, n)
     for i := 0; i < n; i++ {
         toSort[i] = imData.At(start_x + i, start_y)
@@ -292,7 +292,7 @@ func create_sorted_from_mask(imData image.Image, mask *image.NRGBA) *image.NRGBA
                 span_x, span_y := get_mask_span(mask, j, i, horizontal_domain, vertical_domain)            
 
                 //desired_span := intMin(span_x * 2, horizontal_domain)
-                desired_span := intMin(j+((span_x - j)*3), horizontal_domain)
+                desired_span := intMin(j+((span_x - j)*3), horizontal_domain-1)
                 if MASK_DEBUG {
                     desired_span = horizontal_domain
                 }
