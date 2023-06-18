@@ -7,6 +7,7 @@ import (
     "image/color"
     "log"
     "os"
+    "math"
     "math/rand"
     "flag"
     "strings"
@@ -138,6 +139,11 @@ func color_is_white(toComp color.Color) bool {
     return (cr+cg+cb+ca) == 65535*4
 }
 
+func color_is_init(toComp color.Color) bool {
+    cr, cg, cb, ca := toComp.RGBA()
+    return (cr+cg+cb+ca) == 0
+}
+
 func get_mask_span(mask *image.NRGBA, start_x , start_y, max_x, max_y int) (int, int) {
     if !color_is_white(mask.At(start_x, start_y)) {
         return start_x, start_y
@@ -219,6 +225,13 @@ func intMin(a, b int) int {
         return b
     }
 }
+func intMax(a, b int) int {
+    if a > b {
+        return a 
+    } else {
+        return b
+    }
+}
 
 func span_mergesort(span []color.Color) []color.Color {
     n := len(span)
@@ -277,7 +290,7 @@ func sort_span(imData image.Image, start_x, start_y, end_x, end_y int, output *i
     }
 }
 
-func create_sorted_from_mask(imData image.Image, mask *image.NRGBA) *image.NRGBA {
+func create_sorted_from_mask(imData image.Image, mask *image.NRGBA, scalar float64, noiseFactor int) *image.NRGBA {
     output := image.NewNRGBA(imData.Bounds())
     horizontal_domain := mask.Bounds().Dx()
     vertical_domain := mask.Bounds().Dy()
@@ -285,14 +298,42 @@ func create_sorted_from_mask(imData image.Image, mask *image.NRGBA) *image.NRGBA
     outer_bound := vertical_domain 
     inner_bound := horizontal_domain
 
+    j_written := make(map[int]bool)
+    for x := 0; x < len(j_written); x++ {
+        fmt.Println(j_written[x])
+    }
+
     for i := 0; i < outer_bound; i++ {
+        j_written = make(map[int]bool)
         for j := 0; j < inner_bound; j++ {
             if color_is_white(mask.At(j,i)){
-                
+                adjusted_j := j 
                 span_x, span_y := get_mask_span(mask, j, i, horizontal_domain, vertical_domain)            
 
                 //desired_span := intMin(span_x * 2, horizontal_domain)
-                desired_span := intMin(j+((span_x - j)*3), horizontal_domain-1)
+                noiseAmt := 0.0
+                if noiseFactor != 0 {
+                    if noiseFactor > 0 {
+                        noiseAmt = float64(rand.Intn(noiseFactor))
+                    } else {
+                        pos_noise := noiseFactor * -1
+                        half_noise := pos_noise / 2 
+
+                        noiseRaw := rand.Intn(pos_noise)
+                        noiseAmt = float64(half_noise - noiseRaw)
+                        if noiseAmt < 0 {
+                            adjusted_j = intMax (j + int(noiseAmt), 0)
+                        }
+                    }
+                }
+
+                float_j := float64(adjusted_j)
+                float_span := float64(span_x - j)
+                noised_span := float_span + noiseAmt
+                final_span := math.Max(0.0, noised_span)
+                calculated_domain := int(float_j + final_span * scalar)
+
+                desired_span := intMin(calculated_domain, horizontal_domain-1)
                 if MASK_DEBUG {
                     desired_span = horizontal_domain
                 }
@@ -300,11 +341,16 @@ func create_sorted_from_mask(imData image.Image, mask *image.NRGBA) *image.NRGBA
                     desired_span = span_x 
                 }
 
-                sort_span(imData, j, i, desired_span, span_y, output)
+                sort_span(imData, adjusted_j, i, desired_span, span_y, output)
+                for x := adjusted_j; x < desired_span; x++ {
+                    j_written[x] = true
+                }
                 j = desired_span
 
             } else {
-                output.Set(j, i, imData.At(j,i))
+                if !j_written[j] {
+                    output.Set(j, i, imData.At(j,i))
+                }
             }
         }
     }
@@ -440,7 +486,7 @@ func flip_nrgba(imData *image.NRGBA, horizontal bool) *image.NRGBA {
 
 }
 
-func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, direction, maskInPath string) (*image.NRGBA, *image.NRGBA) {
+func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, noiseFactor int, direction, maskInPath string) (*image.NRGBA, *image.NRGBA) {
     direction = strings.ToLower(direction)
     if direction == "up" {
         imData_nrgb = rotate_nrgba(imData_nrgb, 1)
@@ -456,7 +502,7 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, direction, maskIn
     } else {
         mask = read_contrast_mask(maskInPath, imData_nrgb.Bounds())
     }
-    sorted := create_sorted_from_mask(imData_nrgb, mask)
+    sorted := create_sorted_from_mask(imData_nrgb, mask, scalar, noiseFactor)
 
 
     if direction == "up" {
@@ -465,7 +511,6 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, direction, maskIn
         sorted = rotate_nrgba(sorted, 1)
     } else if direction == "left" {
         sorted = flip_nrgba(sorted , true)
-        //sorted = rotate_nrgba(sorted, 2)
     }
 
     return sorted, mask 
@@ -478,11 +523,15 @@ func main() {
     maskInPath := "./mask.png"
     maskOutPath := "./mask.png"
     threshold := 110
+    scalar := 2.0 
+    noiseFactor := 0
     direction := "right"
+
 
     flag.BoolVar(&CRUSH, "crush", false, "Crush the output (bug turned feature)")
     flag.BoolVar(&MASK_DEBUG, "mask_debug", false, "White-out the mask for debugging")
     flag.BoolVar(&SOURCE_DEBUG, "source_debug", false, "Replace the input data with random color noise for debugging")
+    flag.BoolVar(&DEBUG, "span_debug", false, "Fill spans with random colors for debugging")
     flag.BoolVar(&DESCEND, "descend", false, "Sort pixels in descending order")
     flag.BoolVar(&CLEAN, "clean", false, "Limit sorting to only within mask, with no bleeding")
     flag.BoolVar(&INVERT, "invert", false, "Invert the contrast mask")
@@ -494,6 +543,8 @@ func main() {
     flag.StringVar(&maskInPath, "mask", "", "Path to mask input file - skips mask generation step")
     flag.IntVar(&threshold, "threshold", 110, "Red channel threshold for the contrast mask")
     flag.StringVar(&direction, "direction", "right", "Direction of sort smear (up, down, left, right)")
+    flag.Float64Var(&scalar, "scalar", 3.0, "Scale factor of sort span sizing")
+    flag.IntVar(&noiseFactor, "noise", 0, "Random noise span offset amount in pixels")
 
     flag.Parse()
 
@@ -507,7 +558,7 @@ func main() {
     imData := load_image(inPath)
     imData_nrgb := data_to_nrgba(imData)
 
-    sorted, mask := sort_nrgba_image(imData_nrgb, threshold, direction, maskInPath)
+    sorted, mask := sort_nrgba_image(imData_nrgb, threshold, scalar, noiseFactor, direction, maskInPath)
 
     if maskOutPath != "" {
         write_file(mask, maskOutPath)
