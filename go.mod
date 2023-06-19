@@ -1,3 +1,3 @@
-module faceplate-kleo/pixelsorter
+module github.com/faceplate-kleo/pixelsorter
 
 go 1.20
