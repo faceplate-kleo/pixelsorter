@@ -64,7 +64,6 @@ func create_contrast_mask(imData image.Image, threshold uint8) *image.NRGBA {
     max_x := bounds.Dx() 
     max_y := bounds.Dy()
 
-
     for i := 0; i < max_x; i++ {
         for j := 0; j < max_y; j++ {
             currentColor := imData.At(i,j)
@@ -89,7 +88,6 @@ func create_contrast_mask(imData image.Image, threshold uint8) *image.NRGBA {
 
             mask.Set(i, j, outColor)
         }
-    
     }
 
     return mask
@@ -99,7 +97,6 @@ func read_contrast_mask(maskInPath string, bounds image.Rectangle) *image.NRGBA 
     output := image.NewNRGBA(bounds)
 
     //open and read file 
-
     maskFile, err := os.Open(maskInPath)
     if err != nil {
         log.Fatal(err)
@@ -107,8 +104,6 @@ func read_contrast_mask(maskInPath string, bounds image.Rectangle) *image.NRGBA 
     defer maskFile.Close()
 
     //truncate mask 
-
-
     maskData, _, err := image.Decode(maskFile)
     if err != nil {
         log.Fatal(err)
@@ -129,7 +124,6 @@ func read_contrast_mask(maskInPath string, bounds image.Rectangle) *image.NRGBA 
             output.Set(i, j, maskData.At(i, j))
         }
     }
-
 
     return output
 }
@@ -159,7 +153,6 @@ func get_mask_span(mask *image.NRGBA, start_x , start_y, max_x, max_y int) (int,
     }
 
     return relevant_bound, start_y
-
 }
 
 func mean_compare(colorA, colorB color.Color) bool {
@@ -195,8 +188,6 @@ func merge(a []color.Color, iLeft, iRight, iEnd int, b []color.Color) []color.Co
             if MEAN_COMPARE {
                 comp = mean_compare(a[i], a[j])
             }
-
-
             if GRAY_RED_COMPARE {
                comp = red_compare(a[i], a[j]) 
             }
@@ -310,7 +301,6 @@ func create_sorted_from_mask(imData image.Image, mask *image.NRGBA, scalar float
                 adjusted_j := j 
                 span_x, span_y := get_mask_span(mask, j, i, horizontal_domain, vertical_domain)            
 
-                //desired_span := intMin(span_x * 2, horizontal_domain)
                 noiseAmt := 0.0
                 if noiseFactor != 0 {
                     if noiseFactor > 0 {
@@ -406,12 +396,7 @@ func reverse_cols_nrgba(imData *image.NRGBA) {
     }
 }
 
-
-
 func rotate_nrgba(imData *image.NRGBA, rotations int) *image.NRGBA {
-
-    
-
     init_x := imData.Bounds().Dx()
     init_y := imData.Bounds().Dy()
 
@@ -435,14 +420,11 @@ func rotate_nrgba(imData *image.NRGBA, rotations int) *image.NRGBA {
         reverse_rows_nrgba(output)
         reverse_cols_nrgba(output)
         return output
-
     }
-
 
     if rotations == 3 {
         reverse_rows_nrgba(imData)
     }
-
 
     if rotations % 2 != 0 {
         for i := 0; i < desired_y; i++ {
@@ -456,13 +438,10 @@ func rotate_nrgba(imData *image.NRGBA, rotations int) *image.NRGBA {
         reverse_rows_nrgba(output)
     }
 
-
-
     return output 
 }
 
 func flip_nrgba(imData *image.NRGBA, horizontal bool) *image.NRGBA {
-
     output := image.NewNRGBA(imData.Bounds())
     bound := imData.Bounds().Dy()
     altbound := imData.Bounds().Dx()
@@ -483,7 +462,6 @@ func flip_nrgba(imData *image.NRGBA, horizontal bool) *image.NRGBA {
     }
 
     return output 
-
 }
 
 func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, noiseFactor int, direction, maskInPath string) (*image.NRGBA, *image.NRGBA) {
@@ -494,7 +472,6 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, n
         imData_nrgb = rotate_nrgba(imData_nrgb, 3)
     } else if direction == "left" {
         imData_nrgb = flip_nrgba(imData_nrgb, true)
-        //imData_nrgb = rotate_nrgba(imData_nrgb, 2)
     }
     var mask *image.NRGBA
     if maskInPath == "" {
@@ -503,7 +480,6 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, n
         mask = read_contrast_mask(maskInPath, imData_nrgb.Bounds())
     }
     sorted := create_sorted_from_mask(imData_nrgb, mask, scalar, noiseFactor)
-
 
     if direction == "up" {
         sorted = rotate_nrgba(sorted, 3)
@@ -514,7 +490,6 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, n
     }
 
     return sorted, mask 
-
 }
 
 func main() {
@@ -526,7 +501,6 @@ func main() {
     scalar := 2.0 
     noiseFactor := 0
     direction := "right"
-
 
     flag.BoolVar(&CRUSH, "crush", false, "Crush the output (bug turned feature)")
     flag.BoolVar(&MASK_DEBUG, "mask_debug", false, "White-out the mask for debugging")
@@ -554,7 +528,6 @@ func main() {
         return
     }
 
-
     imData := load_image(inPath)
     imData_nrgb := data_to_nrgba(imData)
 
@@ -564,5 +537,4 @@ func main() {
         write_file(mask, maskOutPath)
     }
     write_file(sorted, outPath)
-
 }
