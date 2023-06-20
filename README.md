@@ -3,6 +3,7 @@
 #### A PNG pixel sorting utility of dubious usefulness
 
 ![A sample output of Pixelsorter](./assets/example1.png)
+![Animated sample output of Pixelsorter](./assets/example2.gif)
 
 ## Build
 
