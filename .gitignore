@@ -3,6 +3,7 @@
 *.gif
 *.signal
 !assets/example1.png
+!assets/example2.gif
 resources
 run.sh
 pixelsorter
