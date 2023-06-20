@@ -1,6 +1,7 @@
 .DS_Store
 *.png
 *.gif
+*.signal
 !assets/example1.png
 resources
 run.sh
