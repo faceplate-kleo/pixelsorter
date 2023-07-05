@@ -2,6 +2,7 @@
 *.png
 *.gif
 *.signal
+*.wav
 !assets/example1.png
 !assets/example2.gif
 resources

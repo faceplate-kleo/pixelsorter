@@ -1,6 +1,9 @@
 package main
 
 import (
+    "github.com/faceplate-kleo/pixelsorter/lib"
+
+
 	"flag"
 	"fmt"
 	"image"
@@ -14,6 +17,7 @@ import (
 	"math/rand"
 	"os"
 	"strings"
+    "sort"
 )
 
 var DEBUG bool = false 
@@ -307,9 +311,6 @@ func create_sorted_from_mask(imData image.Image, mask *image.NRGBA, scalar float
     inner_bound := horizontal_domain
 
     j_written := make(map[int]bool)
-    for x := 0; x < len(j_written); x++ {
-        fmt.Println(j_written[x])
-    }
 
     for i := 0; i < outer_bound; i++ {
         j_written = make(map[int]bool)
@@ -550,6 +551,66 @@ func animation_from_single(imData_nrgb *image.NRGBA, inPath, outPath, direction 
     giffile.Close()
 }
 
+
+func gif_visual(outPath string, wavData [][][]byte, samplerate, framerate, num_buckets int) {
+    raw_anim := make([]*image.Paletted, len(wavData))
+    raw_delay := make([]int, len(wavData))
+    delay := int(1.0 / float64(framerate) * 100.0)
+    fmt.Println(delay)
+    res := 512
+    std_bounds := image.Rect(0,0,res,res)
+
+    max_all_buckets := -1
+    all_buckets := make([][]int, len(wavData))
+    for samp := 0; samp < len(wavData); samp++ {
+        sample := lib.SampleWav(wavData, samp, 0)
+        buckets := lib.BucketsFromSample(sample, num_buckets, samplerate)
+        all_buckets[samp] = buckets
+        buckets_clone := make([]int, len(buckets))
+        copy(buckets_clone, buckets)
+        sort.Ints(buckets_clone)
+        bucket_max := buckets_clone[len(buckets_clone)-2]
+        if bucket_max > max_all_buckets {
+            max_all_buckets = bucket_max
+        }
+        
+    }
+
+    for frame := 0; frame < len(wavData); frame++ {
+        frame_img := image.NewPaletted(std_bounds, palette.Plan9)
+        for col := 0; col < res; col++ {
+            this_bucket := int((float64(col) / float64(res)) * float64(num_buckets))
+            bucket_val_unadjusted := all_buckets[frame][this_bucket]
+            val_adjusted := int(float64(res) * (float64(bucket_val_unadjusted) / float64(max_all_buckets)))
+            if val_adjusted > res {
+                val_adjusted = res
+            }
+            for row := 0; row < val_adjusted; row++ {
+                frame_img.Set(col, res-row, color.White)
+            }
+            for row := val_adjusted; row < res; row++ {
+                hue := color.NRGBA{0,0,0,0}
+                if frame == 0 {
+                    hue = color.NRGBA{0,255,0,255}
+                }
+                frame_img.Set(col, res-row, hue)
+            }
+        }
+        raw_anim[frame] = frame_img
+        raw_delay[frame] = delay
+    }
+    outGif := &gif.GIF{}
+    outGif.Image = raw_anim
+    outGif.Delay = raw_delay 
+    
+    giffile, err := os.Create(outPath)
+    if err != nil {
+        log.Fatal(err)
+    }
+    gif.EncodeAll(giffile, outGif)
+    giffile.Close()
+}
+
 func read_signal_file(filepath string) []int {
     signalfile, err := os.Open(filepath)
     if err != nil {
@@ -621,6 +682,11 @@ func main() {
     if inPath == "" {
         fmt.Println("FATAL: no input file specified! ( -in )")
         flag.Usage()
+        framerate := 15
+        wavData, sampleRate := lib.ReadWav("resources/test3.wav", framerate)
+        //ex_frame := lib.SampleWav(wavData, len(wavData)/2, 0)
+        //frame_buckets := lib.BucketsFromSample(ex_frame, 256, sampleRate)
+        gif_visual("vis.gif", wavData, sampleRate, framerate, 256)
         return
     }
     if !ANIM {
