@@ -551,45 +551,60 @@ func animation_from_single(imData_nrgb *image.NRGBA, inPath, outPath, direction 
     giffile.Close()
 }
 
+func create_wave_stack(waveIn string, framerate, num_buckets int) ([][]int, int) {
+    wavData, sampleRate := lib.ReadWav(waveIn, framerate)
+    output := make([][]int, len(wavData))
 
-func gif_visual(outPath string, wavData [][][]byte, samplerate, framerate, num_buckets int) {
-    raw_anim := make([]*image.Paletted, len(wavData))
-    raw_delay := make([]int, len(wavData))
-    delay := int(1.0 / float64(framerate) * 100.0)
-    fmt.Println(delay)
-    res := 512
-    std_bounds := image.Rect(0,0,res,res)
-
-    max_all_buckets := -1
     all_buckets := make([][]int, len(wavData))
     for samp := 0; samp < len(wavData); samp++ {
         sample := lib.SampleWav(wavData, samp, 0)
-        buckets := lib.BucketsFromSample(sample, num_buckets, samplerate)
+        buckets := lib.BucketsFromSample(sample, num_buckets, sampleRate)
         all_buckets[samp] = buckets
-        buckets_clone := make([]int, len(buckets))
-        copy(buckets_clone, buckets)
-        sort.Ints(buckets_clone)
-        bucket_max := buckets_clone[len(buckets_clone)-2]
-        if bucket_max > max_all_buckets {
-            max_all_buckets = bucket_max
-        }
-        
     }
 
     for frame := 0; frame < len(wavData); frame++ {
+        output[frame] = make([]int, num_buckets)
+        for col := 0; col < num_buckets; col++ {
+            val_adjusted := all_buckets[frame][col]
+            output[frame][col] = val_adjusted
+        }
+    }
+
+    return output, len(wavData)
+}
+
+func gif_visualization(inPath, outPath string, framerate, num_buckets int) {
+    waveStack, numFrames := create_wave_stack("./resources/test4.wav", framerate, num_buckets)
+    fmt.Println(len(waveStack[0]))
+    delay := int(1.0 / float64(framerate) * 100.0)
+    res := 512
+    std_bounds := image.Rect(0,0,res,res)
+
+    raw_anim := make([]*image.Paletted, numFrames) 
+    raw_delay := make([]int, numFrames)
+
+    max_amp := -1 
+    for frame := 0; frame < numFrames; frame++ {
+        buckets_clone := make([]int, num_buckets)
+        copy(buckets_clone, waveStack[frame])
+        sort.Ints(buckets_clone)
+        frame_peak := buckets_clone[num_buckets-1]
+        if frame_peak > max_amp {
+            max_amp = frame_peak
+        }
+    }
+
+    for frame := 0; frame < numFrames; frame++ {
         frame_img := image.NewPaletted(std_bounds, palette.Plan9)
+        fmt.Println(waveStack[frame])
         for col := 0; col < res; col++ {
             this_bucket := int((float64(col) / float64(res)) * float64(num_buckets))
-            bucket_val_unadjusted := all_buckets[frame][this_bucket]
-            //val_adjusted := int(float64(res) * (float64(bucket_val_unadjusted) / float64(max_all_buckets)))
-            val_adjusted := bucket_val_unadjusted
-            if val_adjusted > res {
-                val_adjusted = res
-            }
-            for row := 0; row < val_adjusted; row++ {
+            amplitude := waveStack[frame][this_bucket]
+            amplitude = int(float64(amplitude) / float64(max_amp) * float64(res))
+            for row := 0; row < amplitude; row++ {
                 frame_img.Set(col, res-row, color.White)
             }
-            for row := val_adjusted; row < res; row++ {
+            for row := amplitude; row < res; row++ {
                 hue := color.NRGBA{0,0,0,0}
                 if frame == 0 {
                     hue = color.NRGBA{0,255,0,255}
@@ -684,10 +699,7 @@ func main() {
         fmt.Println("FATAL: no input file specified! ( -in )")
         flag.Usage()
         framerate := 25
-        wavData, sampleRate := lib.ReadWav("resources/test4.wav", framerate)
-        //ex_frame := lib.SampleWav(wavData, len(wavData)/2, 0)
-        //frame_buckets := lib.BucketsFromSample(ex_frame, 256, sampleRate)
-        gif_visual("vis.gif", wavData, sampleRate, framerate, 256)
+        gif_visualization("./resources/test4.wav", "vis.gif",framerate, 128)
         return
     }
     if !ANIM {
