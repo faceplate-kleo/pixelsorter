@@ -581,7 +581,8 @@ func gif_visual(outPath string, wavData [][][]byte, samplerate, framerate, num_b
         for col := 0; col < res; col++ {
             this_bucket := int((float64(col) / float64(res)) * float64(num_buckets))
             bucket_val_unadjusted := all_buckets[frame][this_bucket]
-            val_adjusted := int(float64(res) * (float64(bucket_val_unadjusted) / float64(max_all_buckets)))
+            //val_adjusted := int(float64(res) * (float64(bucket_val_unadjusted) / float64(max_all_buckets)))
+            val_adjusted := bucket_val_unadjusted
             if val_adjusted > res {
                 val_adjusted = res
             }
@@ -682,8 +683,8 @@ func main() {
     if inPath == "" {
         fmt.Println("FATAL: no input file specified! ( -in )")
         flag.Usage()
-        framerate := 15
-        wavData, sampleRate := lib.ReadWav("resources/test3.wav", framerate)
+        framerate := 25
+        wavData, sampleRate := lib.ReadWav("resources/test4.wav", framerate)
         //ex_frame := lib.SampleWav(wavData, len(wavData)/2, 0)
         //frame_buckets := lib.BucketsFromSample(ex_frame, 256, sampleRate)
         gif_visual("vis.gif", wavData, sampleRate, framerate, 256)

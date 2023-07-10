@@ -52,6 +52,7 @@ func ReadWav(filepath string, frame_rate int) ([][][]byte, int) {
 
 
     num_samples := (dsiz / widt) 
+
     bytes_per_sample := btps/8
     samples := make([][]byte, num_samples)
 
@@ -59,8 +60,8 @@ func ReadWav(filepath string, frame_rate int) ([][][]byte, int) {
     ptr := 0
     for i := 0; i < num_samples; i++ {
 
-        samples[i] = data[ptr:ptr+(bytes_per_sample)]
-        ptr += bytes_per_sample
+        samples[i] = data[ptr:ptr+(bytes_per_sample * chnl)]
+        ptr += bytes_per_sample*chnl
     }
     playtime := float32(num_samples) / float32(rate)
     fmt.Println("PLAYTIME: ", playtime)
@@ -69,6 +70,7 @@ func ReadWav(filepath string, frame_rate int) ([][][]byte, int) {
 
     samples_per_frame := rate / frame_rate
     num_frames := int( playtime * float32(frame_rate))
+    fmt.Println(num_samples, "samples at", bytes_per_sample, "bytes per sample")
     fmt.Println(num_frames, "frames at", samples_per_frame, "samples per frame")
 
 
@@ -93,6 +95,15 @@ func SampleWav(wavData [][][]byte, index, channel int) []byte {
     return outdata
 }
 
+
+func ToLogarithmic(n, max, exp int) int {
+    log := int(float64(max) * math.Log10(float64(n) / float64(exp)))
+    if log < 0 {
+        log = 0
+    }
+    return log
+}
+
 func BucketsFromSample(sample []byte, num_buckets, sample_rate int) []int{
     outdata := make([]int, num_buckets)
     floats := make([]float64, len(sample))
@@ -102,20 +113,28 @@ func BucketsFromSample(sample []byte, num_buckets, sample_rate int) []int{
 
 
     transformed := fft.FFTReal(floats)
+    transformed = transformed[0:(len(transformed)/2)-1]
 
-    reals := make([]float64, len(sample)-1)
-    for j := 0; j < len(sample) -1; j++ {
-        reals[j] = math.Abs(real(transformed[j+1]))
+    reals := make([]float64, len(transformed)-1)
+    for j := 0; j < len(transformed) -1; j++ {
+        reals[j] = math.Sqrt(math.Pow(real(transformed[j+1]),2)+math.Pow(imag(transformed[j+1]),2)) 
     }
 
-    reals = reals[0:len(reals)/4]
-
     bucket_width := len(reals) / num_buckets
+    if bucket_width < 1 {
+        bucket_width = 1
+    }
 
     for x := 0; x < num_buckets; x++ {
+        //ind := int(math.Log(float64(x * bucket_width)))
         ind := x * bucket_width
-        data_slice := reals[ind:ind+bucket_width]
-        //fmt.Println(data_slice)
+        if ind < 0 {
+            ind = 0
+        } else if ind > len(reals) {
+            ind = len(reals)
+        }
+        slice_end := ind + bucket_width
+        data_slice := reals[ind:slice_end]  
         //mean or max?
 
         //max:
