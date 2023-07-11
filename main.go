@@ -3,7 +3,6 @@ package main
 import (
     "github.com/faceplate-kleo/pixelsorter/lib"
 
-
 	"flag"
 	"fmt"
 	"image"
@@ -47,7 +46,14 @@ func load_image(path string) *image.NRGBA {
     if err != nil {
         fmt.Println(err)
     }
-    return imData.(*image.NRGBA)
+
+    if _, ok := imData.(*image.NRGBA); ok {
+        return imData.(*image.NRGBA)
+    } else {
+        outbuf := image.NewNRGBA(imData.Bounds())
+        draw.Draw(outbuf, outbuf.Rect, imData, imData.Bounds().Min, draw.Over)
+        return outbuf 
+    }
 }
 
 func write_file (imData *image.NRGBA, path string) {
