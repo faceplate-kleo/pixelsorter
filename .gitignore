@@ -3,8 +3,10 @@
 *.gif
 *.signal
 *.wav
+*.mp4
 !assets/example1.png
 !assets/example2.gif
+frames
 resources
 run.sh
 pixelsorter

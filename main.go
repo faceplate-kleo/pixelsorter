@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
     "sort"
+    "sync"
 )
 
 var DEBUG bool = false 
@@ -530,7 +531,7 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, n
     return sorted, mask 
 }
 
-func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath, direction string, threshold, noisefactor, framerate, num_buckets int, scalar float64) {
+func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath, direction string, threshold, noisefactor, framerate, num_buckets int, scalar float64, frames_out bool) {
     waveStack, numFrames := create_wave_stack(wavPath, framerate, num_buckets)
     delay := int(1.0 / float64(framerate) * 100.0)
 
@@ -538,7 +539,9 @@ func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath,
     resY := res.Dy()
 
 
-    raw_anim := make([]*image.Paletted, numFrames) 
+    paletted_anim := make([]*image.Paletted, numFrames) 
+    raw_anim := make([]*image.NRGBA, numFrames)
+    
     raw_delay := make([]int, numFrames)
 
     max_amp := -1 
@@ -551,24 +554,31 @@ func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath,
             max_amp = frame_peak
         }
     }
-
-    for frame := 0; frame < numFrames; frame++ {
-        fmt.Println(waveStack[frame])
-        signal := make([]int, resY)
-        for col := 0; col < resY; col++ {
-            this_bucket := int((float64(col) / float64(resY)) * float64(num_buckets))
-            amplitude := waveStack[frame][this_bucket]
-            amplitude = int(float64(amplitude) / float64(max_amp) * float64(resY))
-            signal[col] = amplitude
-        }
-        sorted, _ := sort_nrgba_image(imData, threshold, scalar, noisefactor, direction, maskPath, signal)
-        frame_img := image.NewPaletted(res, palette.Plan9)
-        draw.Draw(frame_img, frame_img.Rect, sorted, sorted.Bounds().Min, draw.Over)
-        raw_anim[frame] = frame_img
-        raw_delay[frame] = delay
+    var wg sync.WaitGroup
+    for frame := 0; frame < numFrames; frame++ { 
+        imData_copy := image.NewNRGBA(imData.Bounds())
+        draw.Draw(imData_copy, imData_copy.Rect, imData, imData.Bounds().Min, draw.Over)
+        wg.Add(1)
+        go func(frame, resY int, imData *image.NRGBA) { 
+            defer wg.Done()
+            signal := make([]int, resY)
+            for col := 0; col < resY; col++ {
+                this_bucket := int((float64(col) / float64(resY)) * float64(num_buckets))
+                amplitude := waveStack[frame][this_bucket]
+                amplitude = int(float64(amplitude) / float64(max_amp) * float64(resY))
+                signal[col] = amplitude
+            }
+            sorted, _ := sort_nrgba_image(imData, threshold, scalar, noisefactor, direction, maskPath, signal)
+            frame_img := image.NewPaletted(res, palette.Plan9)
+            draw.Draw(frame_img, frame_img.Rect, sorted, sorted.Bounds().Min, draw.Over)
+            raw_anim[frame] = sorted
+            paletted_anim[frame] = frame_img
+            raw_delay[frame] = delay
+        }(frame, resY, imData_copy)
     }
+    wg.Wait()
     outGif := &gif.GIF{}
-    outGif.Image = raw_anim
+    outGif.Image = paletted_anim
     outGif.Delay = raw_delay 
     
     giffile, err := os.Create(outPath)
@@ -577,6 +587,20 @@ func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath,
     }
     gif.EncodeAll(giffile, outGif)
     giffile.Close()
+
+
+    if frames_out {
+        os.Mkdir("./frames", 777)
+        for n := 0; n < numFrames; n++ { 
+            frameID := "FRAME_" + fmt.Sprint(n)
+            fileout := "./frames/" + frameID + ".png"
+            fileobj, err := os.Create(fileout)
+            if err != nil {
+                log.Fatal(err)
+            }
+            png.Encode(fileobj, raw_anim[n])
+        }
+    }
 }
 
 func animation_from_single(imData_nrgb *image.NRGBA, inPath, outPath, direction string, threshold, noiseFactor, frames int, scalar float64) {
@@ -584,7 +608,7 @@ func animation_from_single(imData_nrgb *image.NRGBA, inPath, outPath, direction 
     raw_delay := make([]int, frames)
     for frame := 0; frame < frames; frame++ {
         sorted, _ := sort_nrgba_image(imData_nrgb, threshold, scalar, noiseFactor, direction, "", nil)
-        paletted := image.NewPaletted(sorted.Bounds(), palette.Plan9)
+        paletted := image.NewPaletted(sorted.Bounds(), palette.WebSafe)
         draw.Draw(paletted, paletted.Rect, sorted, sorted.Bounds().Min, draw.Over)
 
         raw_anim[frame] = paletted
@@ -784,7 +808,7 @@ func main() {
             if inPath == "" {
                 gif_visualization(wavein, "./visualization.gif", framerate, buckets)
             }
-            wave_animation_from_single(imData_nrgb, wavein, maskInPath, "./sorted.gif", direction, threshold, noiseFactor, framerate, buckets, scalar)
+            wave_animation_from_single(imData_nrgb, wavein, maskInPath, "./sorted.gif", direction, threshold, noiseFactor, framerate, buckets, scalar, WRITE_FRAMES)
         }
     }   
 }
