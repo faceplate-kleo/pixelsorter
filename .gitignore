@@ -8,5 +8,5 @@
 !assets/example2.gif
 frames
 resources
-run.sh
+*.sh
 pixelsorter
