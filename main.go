@@ -545,9 +545,20 @@ func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath,
     raw_delay := make([]int, numFrames)
 
     //huge time save to do this only one time
+    //TODO: make the rotation literally ANY less hacky
+    mask_copy := image.NewNRGBA(imData.Bounds())
+    draw.Draw(mask_copy, mask_copy.Rect, imData, imData.Bounds().Min, draw.Over)
+    direction = strings.ToLower(direction)
+    if direction == "up" {
+        mask_copy = rotate_nrgba(mask_copy, 1)
+    } else if direction == "down" {
+        mask_copy = rotate_nrgba(mask_copy, 3)
+    } else if direction == "left" {
+        mask_copy = flip_nrgba(mask_copy, true)
+    }
     var master_mask *image.NRGBA 
     if maskPath == "" {
-        master_mask = create_contrast_mask(imData, uint8(threshold))
+        master_mask = create_contrast_mask(mask_copy, uint8(threshold))
     } else {
         master_mask = read_contrast_mask(maskPath, imData.Bounds())
     }
