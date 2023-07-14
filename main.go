@@ -540,7 +540,6 @@ func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath,
 
 
     paletted_anim := make([]*image.Paletted, numFrames) 
-    raw_anim := make([]*image.NRGBA, numFrames)
     
     raw_delay := make([]int, numFrames)
 
@@ -571,9 +570,19 @@ func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath,
             sorted, _ := sort_nrgba_image(imData, threshold, scalar, noisefactor, direction, maskPath, signal)
             frame_img := image.NewPaletted(res, palette.Plan9)
             draw.Draw(frame_img, frame_img.Rect, sorted, sorted.Bounds().Min, draw.Over)
-            raw_anim[frame] = sorted
             paletted_anim[frame] = frame_img
             raw_delay[frame] = delay
+
+
+            if frames_out {
+                frameID := "FRAME_" + fmt.Sprint(frame)
+                fileout := "./frames/" + frameID + ".png"
+                fileobj, err := os.Create(fileout)
+                if err != nil {
+                    log.Fatal(err)
+                }
+                png.Encode(fileobj, sorted)
+            }
         }(frame, resY, imData_copy)
     }
     wg.Wait()
@@ -587,20 +596,6 @@ func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath,
     }
     gif.EncodeAll(giffile, outGif)
     giffile.Close()
-
-
-    if frames_out {
-        os.Mkdir("./frames", 777)
-        for n := 0; n < numFrames; n++ { 
-            frameID := "FRAME_" + fmt.Sprint(n)
-            fileout := "./frames/" + frameID + ".png"
-            fileobj, err := os.Create(fileout)
-            if err != nil {
-                log.Fatal(err)
-            }
-            png.Encode(fileobj, raw_anim[n])
-        }
-    }
 }
 
 func animation_from_single(imData_nrgb *image.NRGBA, inPath, outPath, direction string, threshold, noiseFactor, frames int, scalar float64) {
