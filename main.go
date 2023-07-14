@@ -500,7 +500,7 @@ func flip_nrgba(imData *image.NRGBA, horizontal bool) *image.NRGBA {
     return output 
 }
 
-func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, noiseFactor int, direction, maskInPath string, signal []int) (*image.NRGBA, *image.NRGBA) {
+func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, noiseFactor int, direction, maskInPath string, signal []int, mask *image.NRGBA) (*image.NRGBA, *image.NRGBA) {
     direction = strings.ToLower(direction)
     if direction == "up" {
         imData_nrgb = rotate_nrgba(imData_nrgb, 1)
@@ -509,9 +509,10 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, n
     } else if direction == "left" {
         imData_nrgb = flip_nrgba(imData_nrgb, true)
     }
-    var mask *image.NRGBA
     if maskInPath == "" {
-        mask = create_contrast_mask(imData_nrgb, uint8(threshold))
+        if mask == nil {
+            mask = create_contrast_mask(imData_nrgb, uint8(threshold))
+        }
     } else {
         mask = read_contrast_mask(maskInPath, imData_nrgb.Bounds())
     }
@@ -543,6 +544,14 @@ func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath,
     
     raw_delay := make([]int, numFrames)
 
+    //huge time save to do this only one time
+    var master_mask *image.NRGBA 
+    if maskPath == "" {
+        master_mask = create_contrast_mask(imData, uint8(threshold))
+    } else {
+        master_mask = read_contrast_mask(maskPath, imData.Bounds())
+    }
+
     max_amp := -1 
     for frame := 0; frame < numFrames; frame++ {
         buckets_clone := make([]int, num_buckets)
@@ -553,6 +562,7 @@ func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath,
             max_amp = frame_peak
         }
     }
+
     var wg sync.WaitGroup
     for frame := 0; frame < numFrames; frame++ { 
         imData_copy := image.NewNRGBA(imData.Bounds())
@@ -567,7 +577,7 @@ func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath,
                 amplitude = int(float64(amplitude) / float64(max_amp) * float64(resY))
                 signal[col] = amplitude
             }
-            sorted, _ := sort_nrgba_image(imData, threshold, scalar, noisefactor, direction, maskPath, signal)
+            sorted, _ := sort_nrgba_image(imData, threshold, scalar, noisefactor, direction, "", signal, master_mask)
             frame_img := image.NewPaletted(res, palette.Plan9)
             draw.Draw(frame_img, frame_img.Rect, sorted, sorted.Bounds().Min, draw.Over)
             paletted_anim[frame] = frame_img
@@ -602,7 +612,7 @@ func animation_from_single(imData_nrgb *image.NRGBA, inPath, outPath, direction 
     raw_anim := make([]*image.Paletted, frames) 
     raw_delay := make([]int, frames)
     for frame := 0; frame < frames; frame++ {
-        sorted, _ := sort_nrgba_image(imData_nrgb, threshold, scalar, noiseFactor, direction, "", nil)
+        sorted, _ := sort_nrgba_image(imData_nrgb, threshold, scalar, noiseFactor, direction, "", nil, nil)
         paletted := image.NewPaletted(sorted.Bounds(), palette.WebSafe)
         draw.Draw(paletted, paletted.Rect, sorted, sorted.Bounds().Min, draw.Over)
 
@@ -750,7 +760,7 @@ func main() {
     if !ANIM {
         imData := load_image(inPath)
         imData_nrgb := data_to_nrgba(imData)
-        sorted, mask := sort_nrgba_image(imData_nrgb, threshold, scalar, noiseFactor, direction, maskInPath, nil)
+        sorted, mask := sort_nrgba_image(imData_nrgb, threshold, scalar, noiseFactor, direction, maskInPath, nil, nil)
 
         if maskOutPath != "" {
             write_file(mask, maskOutPath)
