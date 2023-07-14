@@ -1,6 +1,8 @@
 package main
 
 import (
+    "github.com/faceplate-kleo/pixelsorter/lib"
+
 	"flag"
 	"fmt"
 	"image"
@@ -14,6 +16,8 @@ import (
 	"math/rand"
 	"os"
 	"strings"
+    "sort"
+    "sync"
 )
 
 var DEBUG bool = false 
@@ -43,7 +47,14 @@ func load_image(path string) *image.NRGBA {
     if err != nil {
         fmt.Println(err)
     }
-    return imData.(*image.NRGBA)
+
+    if _, ok := imData.(*image.NRGBA); ok {
+        return imData.(*image.NRGBA)
+    } else {
+        outbuf := image.NewNRGBA(imData.Bounds())
+        draw.Draw(outbuf, outbuf.Rect, imData, imData.Bounds().Min, draw.Over)
+        return outbuf 
+    }
 }
 
 func write_file (imData *image.NRGBA, path string) {
@@ -307,9 +318,6 @@ func create_sorted_from_mask(imData image.Image, mask *image.NRGBA, scalar float
     inner_bound := horizontal_domain
 
     j_written := make(map[int]bool)
-    for x := 0; x < len(j_written); x++ {
-        fmt.Println(j_written[x])
-    }
 
     for i := 0; i < outer_bound; i++ {
         j_written = make(map[int]bool)
@@ -492,7 +500,7 @@ func flip_nrgba(imData *image.NRGBA, horizontal bool) *image.NRGBA {
     return output 
 }
 
-func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, noiseFactor int, direction, maskInPath string, signal []int) (*image.NRGBA, *image.NRGBA) {
+func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, noiseFactor int, direction, maskInPath string, signal []int, mask *image.NRGBA) (*image.NRGBA, *image.NRGBA) {
     direction = strings.ToLower(direction)
     if direction == "up" {
         imData_nrgb = rotate_nrgba(imData_nrgb, 1)
@@ -501,9 +509,10 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, n
     } else if direction == "left" {
         imData_nrgb = flip_nrgba(imData_nrgb, true)
     }
-    var mask *image.NRGBA
     if maskInPath == "" {
-        mask = create_contrast_mask(imData_nrgb, uint8(threshold))
+        if mask == nil {
+            mask = create_contrast_mask(imData_nrgb, uint8(threshold))
+        }
     } else {
         mask = read_contrast_mask(maskInPath, imData_nrgb.Bounds())
     }
@@ -523,13 +532,99 @@ func sort_nrgba_image(imData_nrgb *image.NRGBA, threshold int, scalar float64, n
     return sorted, mask 
 }
 
+func wave_animation_from_single(imData *image.NRGBA, wavPath, maskPath, outPath, direction string, threshold, noisefactor, framerate, num_buckets int, scalar float64, frames_out bool) {
+    waveStack, numFrames := create_wave_stack(wavPath, framerate, num_buckets)
+    delay := int(1.0 / float64(framerate) * 100.0)
+
+    res := imData.Bounds() 
+    resY := res.Dy()
+
+    paletted_anim := make([]*image.Paletted, numFrames) 
+    raw_delay := make([]int, numFrames)
+
+    //huge time save to do this only one time
+    //TODO: make the rotation literally ANY less hacky
+    mask_copy := image.NewNRGBA(imData.Bounds())
+    draw.Draw(mask_copy, mask_copy.Rect, imData, imData.Bounds().Min, draw.Over)
+    direction = strings.ToLower(direction)
+    if direction == "up" {
+        mask_copy = rotate_nrgba(mask_copy, 1)
+    } else if direction == "down" {
+        mask_copy = rotate_nrgba(mask_copy, 3)
+    } else if direction == "left" {
+        mask_copy = flip_nrgba(mask_copy, true)
+    }
+    var master_mask *image.NRGBA 
+    if maskPath == "" {
+        master_mask = create_contrast_mask(mask_copy, uint8(threshold))
+    } else {
+        master_mask = read_contrast_mask(maskPath, imData.Bounds())
+    }
+
+    max_amp := -1 
+    for frame := 0; frame < numFrames; frame++ {
+        buckets_clone := make([]int, num_buckets)
+        copy(buckets_clone, waveStack[frame])
+        sort.Ints(buckets_clone)
+        frame_peak := buckets_clone[num_buckets-1]
+        if frame_peak > max_amp {
+            max_amp = frame_peak
+        }
+    }
+
+    var wg sync.WaitGroup
+    for frame := 0; frame < numFrames; frame++ { 
+        imData_copy := image.NewNRGBA(imData.Bounds())
+        draw.Draw(imData_copy, imData_copy.Rect, imData, imData.Bounds().Min, draw.Over)
+        wg.Add(1)
+        go func(frame, resY int, imData *image.NRGBA) { 
+            defer wg.Done()
+            signal := make([]int, resY)
+            for col := 0; col < resY; col++ {
+                this_bucket := int((float64(col) / float64(resY)) * float64(num_buckets))
+                amplitude := waveStack[frame][this_bucket]
+                amplitude = int(float64(amplitude) / float64(max_amp) * float64(resY))
+                signal[col] = amplitude
+            }
+            sorted, _ := sort_nrgba_image(imData, threshold, scalar, noisefactor, direction, "", signal, master_mask)
+
+            if frames_out {
+                frameID := "FRAME_" + fmt.Sprint(frame)
+                fileout := "./frames/" + frameID + ".png"
+                fileobj, err := os.Create(fileout)
+                if err != nil {
+                    log.Fatal(err)
+                }
+                png.Encode(fileobj, sorted)
+            } else {
+                frame_img := image.NewPaletted(res, palette.Plan9)
+                draw.Draw(frame_img, frame_img.Rect, sorted, sorted.Bounds().Min, draw.Over)
+                paletted_anim[frame] = frame_img
+                raw_delay[frame] = delay
+            }
+        }(frame, resY, imData_copy)
+    }
+    if !frames_out {
+        wg.Wait()
+        outGif := &gif.GIF{}
+        outGif.Image = paletted_anim
+        outGif.Delay = raw_delay 
+        
+        giffile, err := os.Create(outPath)
+        if err != nil {
+            log.Fatal(err)
+        }
+        gif.EncodeAll(giffile, outGif)
+        giffile.Close()
+    }
+}
 
 func animation_from_single(imData_nrgb *image.NRGBA, inPath, outPath, direction string, threshold, noiseFactor, frames int, scalar float64) {
     raw_anim := make([]*image.Paletted, frames) 
     raw_delay := make([]int, frames)
     for frame := 0; frame < frames; frame++ {
-        sorted, _ := sort_nrgba_image(imData_nrgb, threshold, scalar, noiseFactor, direction, "", nil)
-        paletted := image.NewPaletted(sorted.Bounds(), palette.Plan9)
+        sorted, _ := sort_nrgba_image(imData_nrgb, threshold, scalar, noiseFactor, direction, "", nil, nil)
+        paletted := image.NewPaletted(sorted.Bounds(), palette.WebSafe)
         draw.Draw(paletted, paletted.Rect, sorted, sorted.Bounds().Min, draw.Over)
 
         raw_anim[frame] = paletted
@@ -550,34 +645,80 @@ func animation_from_single(imData_nrgb *image.NRGBA, inPath, outPath, direction 
     giffile.Close()
 }
 
-func read_signal_file(filepath string) []int {
-    signalfile, err := os.Open(filepath)
+func create_wave_stack(waveIn string, framerate, num_buckets int) ([][]int, int) {
+    wavData, sampleRate := lib.ReadWav(waveIn, framerate)
+    output := make([][]int, len(wavData))
+
+    all_buckets := make([][]int, len(wavData))
+    for samp := 0; samp < len(wavData); samp++ {
+        sample := lib.SampleWav(wavData, samp, 0)
+        buckets := lib.BucketsFromSample(sample, num_buckets, sampleRate)
+        all_buckets[samp] = buckets
+    }
+
+    for frame := 0; frame < len(wavData); frame++ {
+        output[frame] = make([]int, num_buckets)
+        for col := 0; col < num_buckets; col++ {
+            val_adjusted := all_buckets[frame][col]
+            output[frame][col] = val_adjusted
+        }
+    }
+
+    return output, len(wavData)
+}
+
+func gif_visualization(inPath, outPath string, framerate, num_buckets int) {
+    waveStack, numFrames := create_wave_stack("./resources/test4.wav", framerate, num_buckets)
+    fmt.Println(len(waveStack[0]))
+    delay := int(1.0 / float64(framerate) * 100.0)
+    res := 512
+    std_bounds := image.Rect(0,0,res,res)
+
+    raw_anim := make([]*image.Paletted, numFrames) 
+    raw_delay := make([]int, numFrames)
+
+    max_amp := -1 
+    for frame := 0; frame < numFrames; frame++ {
+        buckets_clone := make([]int, num_buckets)
+        copy(buckets_clone, waveStack[frame])
+        sort.Ints(buckets_clone)
+        frame_peak := buckets_clone[num_buckets-1]
+        if frame_peak > max_amp {
+            max_amp = frame_peak
+        }
+    }
+
+    for frame := 0; frame < numFrames; frame++ {
+        frame_img := image.NewPaletted(std_bounds, palette.Plan9)
+        fmt.Println(waveStack[frame])
+        for col := 0; col < res; col++ {
+            this_bucket := int((float64(col) / float64(res)) * float64(num_buckets))
+            amplitude := waveStack[frame][this_bucket]
+            amplitude = int(float64(amplitude) / float64(max_amp) * float64(res))
+            for row := 0; row < amplitude; row++ {
+                frame_img.Set(col, res-row, color.White)
+            }
+            for row := amplitude; row < res; row++ {
+                hue := color.NRGBA{0,0,0,0}
+                if frame == 0 {
+                    hue = color.NRGBA{0,255,0,255}
+                }
+                frame_img.Set(col, res-row, hue)
+            }
+        }
+        raw_anim[frame] = frame_img
+        raw_delay[frame] = delay
+    }
+    outGif := &gif.GIF{}
+    outGif.Image = raw_anim
+    outGif.Delay = raw_delay 
+    
+    giffile, err := os.Create(outPath)
     if err != nil {
         log.Fatal(err)
     }
-    defer signalfile.Close()
-
-    err = nil 
-    //var buf []byte 
-    buf := make([]byte, 1024)
-    var out []int
-    var cnt int64 = 0
-    for err == nil {
-        var n int
-        n, err = signalfile.ReadAt(buf, cnt)
-        for i := 0; i < len(buf); i++ {
-            //out[i+int(cnt)] = int(buf[i])
-            out = append(out, int(buf[i]))
-        }
-        cnt = cnt + int64(n)
-    }
-
-    truncated_out := make([]int, int(cnt))
-    for i := 0; i < int(cnt); i++ {
-       truncated_out[i] = out[i] 
-    }
-
-    return truncated_out 
+    gif.EncodeAll(giffile, outGif)
+    giffile.Close()
 }
 
 func main() {
@@ -590,7 +731,9 @@ func main() {
     noiseFactor := 0
     direction := "right"
     frames := 10
-    signalFile := "./signal.signal"
+    wavein := ""
+    framerate := 25
+    buckets := 128
 
     flag.BoolVar(&CRUSH, "crush", false, "Crush the output (bug turned feature)")
     flag.BoolVar(&MASK_DEBUG, "mask_debug", false, "White-out the mask for debugging")
@@ -611,9 +754,11 @@ func main() {
     flag.IntVar(&noiseFactor, "noise", 0, "Random noise span offset amount in pixels")
 
     flag.BoolVar(&ANIM, "anim", false, "Create a .gif animation")
-    flag.BoolVar(&WRITE_FRAMES, "write_frames", false, "Write all frames generated by -anim as individual .pngs")
+    flag.BoolVar(&WRITE_FRAMES, "write_frames", false, "Write all frames generated by -anim as individual .pngs. Omitting this option will generate a .GIF instead")
     flag.IntVar(&frames, "frames", 10, "The number of frames to generate when -anim is enabled")
-    flag.StringVar(&signalFile, "signal", "", "Filepath of a signal file")
+    flag.StringVar(&wavein, "wav", "", "Filepath of a .wav file")
+    flag.IntVar(&framerate, "framerate", 25, "Desired framerate of output .GIF (Warning: values n for 100 % n != 0 will cause time drift with audio!)")
+    flag.IntVar(&buckets, "buckets", 128, "The number of frequency bands to divide .wav signal into")
 
 
     flag.Parse()
@@ -626,13 +771,7 @@ func main() {
     if !ANIM {
         imData := load_image(inPath)
         imData_nrgb := data_to_nrgba(imData)
-
-        var signal []int = nil 
-        if signalFile != ""{
-            signal = read_signal_file(signalFile)
-        }
-
-        sorted, mask := sort_nrgba_image(imData_nrgb, threshold, scalar, noiseFactor, direction, maskInPath, signal)
+        sorted, mask := sort_nrgba_image(imData_nrgb, threshold, scalar, noiseFactor, direction, maskInPath, nil, nil)
 
         if maskOutPath != "" {
             write_file(mask, maskOutPath)
@@ -641,7 +780,13 @@ func main() {
     } else {
         imData := load_image(inPath)
         imData_nrgb := data_to_nrgba(imData)
-
-        animation_from_single(imData_nrgb, inPath, outPath, direction, threshold, noiseFactor, frames, scalar)
+        if wavein == "" {
+            animation_from_single(imData_nrgb, inPath, outPath, direction, threshold, noiseFactor, frames, scalar)
+        } else {
+            if inPath == "" {
+                gif_visualization(wavein, "./visualization.gif", framerate, buckets)
+            }
+            wave_animation_from_single(imData_nrgb, wavein, maskInPath, "./sorted.gif", direction, threshold, noiseFactor, framerate, buckets, scalar, WRITE_FRAMES)
+        }
     }   
 }

@@ -2,8 +2,11 @@
 *.png
 *.gif
 *.signal
-!assets/example1.png
-!assets/example2.gif
+*.wav
+*.mp4
+!assets/*.png
+!assets/*.gif
+frames
 resources
-run.sh
+*.sh
 pixelsorter
