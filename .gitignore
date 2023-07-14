@@ -4,8 +4,8 @@
 *.signal
 *.wav
 *.mp4
-!assets/example1.png
-!assets/example2.gif
+!assets/*.png
+!assets/*.gif
 frames
 resources
 *.sh
