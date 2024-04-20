@@ -30,9 +30,9 @@ func CreateContrastMask(imData image.Image, threshold uint8, flags f.Flags) *ima
 			}
 			if comparator < threshold {
 				if flags.INVERT {
-					outColor = color.Black
-				} else {
 					outColor = color.White
+				} else {
+					outColor = color.Black
 				}
 			}
 
